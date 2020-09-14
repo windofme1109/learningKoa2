@@ -1,4 +1,5 @@
 const Koa = require('./koa2/like-koa2');
+// const Koa = require('./koa2/like-koa2_self');
 
 const app = new Koa();
 

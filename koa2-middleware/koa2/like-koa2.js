@@ -32,7 +32,7 @@ function compose(middleareList) {
             }
 
             try {
-                // 中间件函数必须是async函数，而async函数要求返回值是Promise对象
+                // 中间件函数可以是 async 函数，也可以不是。无论是不是 async 函数，中间件内部必须可以使用 await。
                 // 所以，我们这里使用Promise.resolve()包装函数的执行结果，使其成为一个Promise对象
                 // 这样，无论我们有没有使用async函数，都可以获得一个Promise对象，使得我们后续可以使用await语法，调用next()
                 return Promise.resolve(
@@ -98,18 +98,36 @@ class LikeKoa2 {
         return (req, res) => {
             const ctx = this.createContext(req, res);
             // 这里直接执行fn()即可
+            // 开始执行中间件
             fn(ctx);
             // 也可以单独定义一个函数，用于执行中间件
             // return this.handleRequest(ctx, fn);
         }
     }
 
+
+
     listen(...args) {
 
         const server = http.createServer(this.callback());
-
         server.listen(...args);
     }
+
+
+    // 这样使用：http.createServer(this.callback)可以吗
+    // callback(req, res) {
+    //     // fn()是真正执行中间件的函数
+    //     const fn = compose(this.middlewareList);
+    //     const ctx = this.createContext(req, res);
+    //     fn(ctx);
+    // }
+
+    // 结果会报错
+    // 原因是createServer()接收的是回调函数，this.callback是对callback()的一个引用
+    // createServer()是异步创建http服务，那么真正调用callback()的时候
+    // callback()内部的this并不一定是指向LikeKoa2的实例
+    // 所以，这里需要将callback()内部的this指向LikeKoa2
+    // 使用闭包结合箭头函数完成this的绑定
 }
 
 
