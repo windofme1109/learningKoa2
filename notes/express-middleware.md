@@ -43,11 +43,19 @@
 2. 定义一个类，这个类用来实现 Express 的基本功能。包括use()、get()、post()、listen() 等方法。
    ```javascript
       class LikeExpress {
-          all = [];
-          get = [];
-          post = [];
+          routes = {
+              all: [],
+              get: [],
+              post: [],
+          }
+          
       }
    ```
+   `all` 接收 use() 注册的 path 和路由  
+   `get` 接收 get() 注册的 path 和路由  
+   `post` 接收 post() 注册的 path 和路由  
+   path 与中间件是一一对应的
+   
 3. 对外暴露这个类
    ```javascript
       module.exports = () => {
@@ -57,6 +65,26 @@
    这里使用工厂函数的模式。这样外界在引用这个模块的时候，获得的就是 LikeExpress 的实例。
 
 4. 定义 use()、get()、post()等方法
+   ```javascript
+      use() {
+          const info = this.register(...arguments);
+          this.routes.all.push(info);
+      }
+   
+      get() {
+          const info = this.register(...arguments);
+          this.routes.all.push(info);
+      }
+      
+      post() {
+          const info = this.register(...arguments);
+          this.routes.all.push(info);
+      }
+   ```
+   use()、get()、post()逻辑类似，都是将接收的path和中间件函数注册到routes对象中。这个注册的过程通过register()完成。  
+   `info` 存放的是path以及与之对应的中间件。然后将`info` 放入routes对象中与方法对应的属性中。
+   
+
 
 5. 定义 register()方法
 
