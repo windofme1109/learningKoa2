@@ -47,6 +47,7 @@
 4. 具体过程如下图所示：
 
    ![](./img/koa2-call_middleware.png)
+
 ### 5. 代码实现
 
 1. 引入 node 原生的 http 模块，用来实现 http 服务。
@@ -151,3 +152,84 @@
       module.exports = LikeKoa2;
    ```
  
+7. 完整的代码：
+   ```javascript
+      const http = require('http');
+      
+      function compose(middlewareList) {
+      
+          return (ctx) => {
+              function dispatch(index) {
+                  const fn = middlewareList[index];
+                  try {
+                      return Promise.resolve(
+                          fn(ctx, dispatch.bind(null, index + 1))
+                      );
+                  } catch (err) {
+                      return Promise.reject(err);
+                  }
+              }
+      
+              return dispatch(0);
+          }
+      }
+      
+      class LikeKoa2 {
+          middlewareList = [];
+      
+          use(fn) {
+              this.middlewareList.push(fn);
+          }
+      
+          createContext(req, res) {
+              return {req, res};
+          }
+      
+          callback() {
+              const fn = compose(this.middlewareList);
+              return (req, res) => {
+                  const ctx = this.createContext(req, res);
+                  fn(ctx);
+              }
+      
+          }
+      
+          listen(...args) {
+              const server = http.createServer(this.callback());
+              server.listen(...args);
+          }
+      }
+      
+      module.exports = LikeKoa2;
+   ``` 
+
+8. 测试代码
+   ```javascript
+      const Koa = require('./koa2/like-koa2_self');
+      
+      const app = new Koa();
+      
+      app.use(async (ctx, next) => {
+          await next();
+          const rt = ctx['X-Response-Time'];
+          console.log(`${ctx.req.method} ${ctx.req.url} - ${rt}ms`);
+      })
+      
+      app.use(async (ctx, next) => {
+          const start = Date.now();
+          await next();
+          ctx['X-Response-Time'] = Date.now() - start;
+      })
+      
+      app.use(async (ctx, next) => {
+          ctx.res.end('hello world');
+      })
+   ```
+   
+9. 测试
+   - 在浏览器中输入：`localhost:8080`，控制台输出：
+     ```javascript
+        GET / - 3ms
+        GET /favicon.ico - 1ms
+     ```
+     简单的实现了中间件的功能
