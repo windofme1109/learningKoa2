@@ -6,6 +6,12 @@
 
    ![](./img/node-stream.png)
    
-### 1. 可读流（readable Stream）
-### 2. 可写流（writable Stream）
-### 3. 管道（pipe）
+### 2. 可读流（readable Stream）
+
+### 4. 可写流（writable Stream）
+
+### 4. 管道（pipe）
+
+### 5. 双向流（Duplex Stream）
+
+### 6. 转换流（Transform Stream）
