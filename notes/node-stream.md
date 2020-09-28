@@ -78,7 +78,7 @@
             console.log('end');
         })
         
-        // 流或者底层资源文件关闭后，这里就是1.txt这个文件关闭后，触发close事件
+        // 流或者底层资源文件关闭后，这里就是 data.txt 这个文件关闭后，触发 close 事件
         readStream.on('close', function () {
             console.log('close');
         })
@@ -106,14 +106,314 @@
      
      6. error 事件通常会在底层系统内部出错从而不能产生数据，或当流的实现试图传递错误数据时发生。
 
- 
+3. 模式切换
+   - 调用 pause() 由 flowing 切换到 pause 模式，用 resume() 方法进行恢复为 flowing 模式。
+   - 示例：
+     ```javascript
+        const fs = require('fs');
+        
+        const readStream = fs.createReadStream('./files/data.txt', {
+            encoding: 'utf-8',  // 文件内容的编码方式，默认是 null，null 表示的是 buffer
+            flags: 'r',  // 操作方式是只读
+            highWaterMark: 3,  // 一次读取的数据量，单位是字节，默认是64k
+            autoClose: true,  // 读取完成是否自动关闭流
+            start: 0,  // 读取的起始位置
+            end: 9,  // 读取的结束位置，包括9这个位置
+        });
+        
+        readStream.on('open', () => {
+            console.log('open');
+        })
+        readStream.on('data', (chunk) => {
+            console.log(chunk);
+            readStream.pause();
+        })
+        
+        setTimeout(() => {
+            readStream.resume();
+        }, 1000); 
+        
+        readStream.on('end', () => {
+            console.log('end');
+        })
+     ``` 
+     输出：
+     ```javascript
+        open
+        123
+        456
+     ```
+     1. 监听 data 事件，可读流处于flowing 状态，在回调函数内部，调用了 pause() 方法，然后 暂停 data 事件的触发，此时为 pause 模式。
      
+     2. 设置了一个定时器，定时器的处理函数内部调用 resume() 方法，可以恢复 data 事件的触发，由 pause 模式切换到 flowing 模式。
+     
+     3. 1s 后，切换流到flowing模式，data事件触发，但又遇到pause(),所以暂停了输出，此时并没有resume()方法来进行模式的转换，所以只打印到6。
+     4. 可读流中还有数据未被消费，但是此时是 pause 状态，所以，不会调用 end() 方法。
+     
+     **注意**: 如果可读流切换到 flowing 模式，且没有消费者处理流中的数据，这些数据将会丢失。 比如， 调用了可读流的 resume() 方法却没有监听 data 事件，或是取消了 data 事件监听，就有可能出现这种情况。
+4. readable  
+   - readable 事件将在流中有数据可供读取时触发
+   - 当我们创建可读流时，就会先把缓存区填满（highWaterMark为指定的单次缓存区大小），等待消费
+   - 如果缓存区被清空（消费）后，会触发 readable 事件
+   - 当到达流数据尾部时，readable 事件也会触发，触发顺序在end事件之前
+   - 
+   
 ### 4. 可写流（Writable Streams）
 
+1. 可写流是对数据写入目的地（）的一种抽象。
+
+2. 基本用法：
+   ```javascript
+      const fs = require('fs');
+      // 以流的方式，写入一个文件
+      // 创建一个写入流，第一个参数是path，第二个参数option，可以指定编码等
+      const writeStream = fs.createWriteStream('./files/output.txt', {
+          encoding: 'utf-8',  // 默认是 utf-8
+          flags: 'w',  // 文件操作方式是写入
+          // mode: 0o666,  //
+          autoClose: true,
+          highWaterMark: 3,  // 默认是16看、，单位是字节
+          start: 0  // 起始位置
+      });
+      
+      for (let i = 0; i < 4; i++) {
+          let flag = writeStream.write(i + '');
+      
+          console.log(flag);
+      }
+      // 标记文件末尾
+      // 调用这个方法表示数据已经写入完毕（没有数据可以被写入到流中）
+      writeStream.end('ok');
+      
+      writeStream.on('open', () => {
+          console.log('open');
+      })
+      // finish事件，当end()方法被调用后，会触发finish事件
+      writeStream.on('finish', function () {
+          console.log('finish');
+      })
+      
+      writeStream.on('error', function (error) {
+          console.log(error);
+      
+      })
+   ```
+   输出：
+   ```javascript
+      true
+      true
+      false
+      false
+      open
+      finish
+   ```
+   说明：
+   1. output.txt 中的内容是：0123ok
+   
+   2. createWriteStream() 创建一个可写流，会默认会打开文件，但是不会触发 open 事件。
+   
+   3. 可写流通过反复调用 write(chunk) 方法将数据写入内部缓冲器。写入的数据 chunk 必须是字符串或者buffer。  
+   write()是个异步方法，但有返回值。这个返回值 flag 的含义表示能否继续写入，而不是文件是否写入。  
+   缓冲器总大小 < highWaterMark 时，可以继续写入，flag为true； 一旦内部缓冲器大小达到或超过highWaterMark，flag返回false。  
+   **注意**，即使 flag 为 false，写入的内容也不会丢失。此时向流中写入数据的操作会停止，直到触发 drain 事件后，写入过程才会恢复。
+   
+   4. 我们在创建可读流的过程中指定的 highWaterMark 是 3，调用 write() 时一次写入了一个字节，写入的多少由传入 wrire() 的数据决定。当调用第三次 write() 方法时，缓冲器中的数据大小达到 3 这个阈值，开始返回 false，所以先打印了两次 true，后打印了两次 false。
+   
+   5. end('ok'); end() 方法用来标记文件末尾，表示接下来没有数据要写入可写流；  
+   可以传入可选的 chunk 和 encoding 参数，在关闭流之前再写入一段数据；  
+   如果传入了可选的 callback 函数，它将作为 finish 事件的回调函数。所以 'ok' 会被写入文件末尾。  
+   **注意**，write() 方法必须在 end() 方法之前调用。
+   
+   6. 在调用了 end() 方法，且缓冲区数据都已经传给底层系统（全部写入output.txt）之后， finish 事件将被触发。
+   
+   7. close 事件将在流或其底层资源（比如一个文件）关闭后触发。close 事件触发后，该流将不会再触发任何事件。  
+      **注意**：不是所有 可写流/可读流 都会触发 close 事件。
+
+3. 写入流的第二种用法——一次写入大量数据：
+   ```javascript
+      const fs = require('fs');
+      // 以流的方式，写入一个文件
+      // 创建一个写入流，第一个参数是path，第二个参数option，可以指定编码等
+      const writeStream = fs.createWriteStream('./files/output.txt', {
+          encoding: 'utf-8',  // 默认是 utf-8
+          flags: 'w',  // 文件操作方式是写入
+          // mode: 0o666,  //
+          autoClose: true,
+          highWaterMark: 3,  // 默认是16k，单位是字节
+          start: 0  // 起始位置
+      });
+      
+      let content = '这是一个测试文件\n';
+      let str = '';
+      
+      for (let i = 0; i < 10000; i++) {
+          str += content;
+      }  
+      let count = 0;
+      // 写入数据，write()方法将数据写入流中
+      // 第一个参数是要写入的数据，第二参数是编码，如果写入的数据是字符串，默认是utf-8
+      // 第三个参数是回调函数，当数据块被刷新（数据被处理或者数据全部写入流中）的时候被调用
+      writeStream.write(str, function () {
+          console.log('数据被刷新了');
+          count++;
+      });
+      
+      // 标记文件末尾
+      // 调用这个方法表示数据已经写入完毕（没有数据可以被写入到流中）
+      writeStream.end();
+      
+      writeStream.on('open', () => {
+          console.log('open');
+      })
+      // finish事件，当end()方法被调用后，会触发finish事件
+      writeStream.on('finish', function () {
+          console.log('写入完成');
+          console.log(count);
+      })
+      
+      writeStream.on('error', function (error) {
+          console.log(error);
+      
+      })
+      
+      
+      console.log('程序执行完毕');
+   ```
+   输出：
+   ```javascript
+      程序执行完毕
+      open
+      数据被刷新了
+      写入完成
+      1
+   ```
+   可写流的执行过程是异步过程，调用write()方法，将数据全部写入缓冲区中，由于write() 方法的回调函数是数据块被刷新（数据被处理或者数据全部写入流中）后才会被调用，所以此时不会调用这个回调函数。也不会触发其他事件，因此会最先输出 `程序执行完毕`。  
+   文件被打开，触发 open 事件，将数据写入文件中，缓冲区被刷新，调用write()的回调函数，所以会输出 `数据被刷新了`。数据写入完成后，调用 end() 方法，最后触发 finish 事件。
+4. drain 事件
+
+   - 如果调用 write(chunk) 方法返回 false，drain 事件会在适合恢复写入数据到流的时候触发。
+   
+   - drain 事件触发条件：
+     - 缓冲器满了，即 write() 方法返回 false。
+     - 缓冲器的数据都写入到流，即数据都被消费掉后，才会触发
+   
+   - drain 事件触发示例：
+     ```javascript
+        const fs = require('fs');
+        // 以流的方式，写入一个文件
+        // 创建一个写入流，第一个参数是path，第二个参数option，可以指定编码等
+        const writeStream = fs.createWriteStream('./files/output.txt', {
+            encoding: 'utf-8',  // 默认是 utf-8
+            flags: 'w',  // 文件操作方式是写入
+            // mode: 0o666,  //
+            autoClose: true,
+            highWaterMark: 3,  // 默认是16看、，单位是字节
+            start: 0  // 起始位置
+        });
+        let i = 8;
+        
+        function write() {
+            let flag = true;
+            while (i > 0 && flag) {
+                flag = writeStream.write(i + '', () => {});
+                i--;
+                console.log(flag);
+            }
+        
+            if (i <= 0) {
+                writeStream.end('ok');
+            }
+        }
+        
+        write();
+        
+        // drain只有当缓存区充满后 ，并且被消费后触发
+        writeStream.on('drain', () => {
+            console.log('drain');
+            write();
+        });
+     
+        writeStream.on('open', () => {
+            console.log('open');
+        })
+        // finish事件，当end()方法被调用后，会触发finish事件
+        writeStream.on('finish', function () {
+            console.log('写入完成');
+            // console.log(count);
+        })
+     
+        writeStream.on('close', function () {
+            console.log('close');
+        
+        })
+     
+        writeStream.on('error', function (error) {
+            console.log(error);
+        
+        })
+     ```
+   - 输出：
+     ```javascript
+        true
+        true
+        false
+        open
+        drain
+        true
+        true
+        false
+        drain
+        true
+        true
+        写入完成
+        close
+     ```
+   - output.txt 内容是：87654321ok
+   - 设置的缓冲区的大小为3，所以当写入第三个数据的时候，write() 返回 false，此时while 循环停止，等待，然后可写流将缓冲区内数据全部写入文件中，先触发 open 事件（open 事件只触发一次），再会触发 drain 事件，然后继续调用 write()，一直重复上述过程，直到 i 为 1，停止写入，此时调用 end()，在文件末尾写入 ok，触发 finish 事件。最后关闭文件，触发 close 事件。
+ 
 ### 4. 管道（Pipe）
+
+1. 管道提供了一个输出流到输入流的机制。通常我们用于从一个流中获取数据并将数据传递到另外一个流中。
+
+2. 类似于现实中的管道，将液体从源（source）传送到目的地（destination）。Node 中的 Pipe 作用也是将一个流从源传输搭配目的地。比如说可读流传递到可写流。
+
+3. 一个可读流可以和一个可写流串起来，所有的数据自动从可读流进入可写流，这种操作叫 Pipe。
+
+4. Pipe 操作可以组合，形成链式调用。
+
+5. Pipe 操作示意——复制文件：
+   ```javascript
+      const fs = require('fs');
+      // 创建一个可读流
+      const readStream = fs.createReadStream('./files/0001.jpg');
+      
+      // 创建一个可写流
+      const writeStream = fs.createWriteStream('./0001-copy.jpg');
+      
+      // pipe()接收一个可写流作为参数
+      // 调用可读流的pipe()方法，数据自动从可读流中流入可写流中
+      // 实现可读流到可写流的转换
+      // pipe()的返回值是一个可写流（就是接收的参数，可读流的目的地）
+      // 如果返回值是双向流或者是转换流，可以实现pipe()方法的链式调用
+      readStream.pipe(writeStream);
+      
+      // 默认情况下，当可读流结束（触发end事件）时，可写流会自动调用end()方法，此时可写流不会写入任何数据
+      // 如果不想自动调用end()方法，可以在pipe()方法中，配置第二个参数：{end: false}
+      
+      readStream.on('end', function () {
+          console.log('拷贝完成');
+      });
+   ```
+
 
 ### 5. 双向流（Duplex Streams）
 
 ### 6. 转换流（Transform Streams）
 
 ### 7. 操作流的常见 API
+
+1. File Sysyem
+   - 创建流：
+     - fs.createReadStream()
+     - fs.createWriteStream()
+2. Stream
