@@ -459,6 +459,13 @@
    - 创建流：
      - fs.createReadStream()
      - fs.createWriteStream()
+   - 可读流
+     1. 事件
+     2.
+   
+   - 可写流
+   - 管道
+   
 2. Stream
 
 ### 8. 疑问
