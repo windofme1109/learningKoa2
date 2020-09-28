@@ -151,16 +151,59 @@
      4. 可读流中还有数据未被消费，但是此时是 pause 状态，所以，不会调用 end() 方法。
      
      **注意**: 如果可读流切换到 flowing 模式，且没有消费者处理流中的数据，这些数据将会丢失。 比如， 调用了可读流的 resume() 方法却没有监听 data 事件，或是取消了 data 事件监听，就有可能出现这种情况。
+
 4. readable  
    - readable 事件将在流中有数据可供读取时触发
-   - 当我们创建可读流时，就会先把缓存区填满（highWaterMark为指定的单次缓存区大小），等待消费
-   - 如果缓存区被清空（消费）后，会触发 readable 事件
-   - 当到达流数据尾部时，readable 事件也会触发，触发顺序在end事件之前
-   - 
    
+   - 当我们创建可读流时，就会先把缓存区填满（highWaterMark为指定的单次缓存区大小），等待消费
+   
+   - 如果缓存区被清空（消费）后，会触发 readable 事件
+   
+   - 当到达流数据尾部时，readable 事件也会触发，触发顺序在end事件之前
+   -  如果同时监听 readable 和 data，则优先触发 readable 事件。 只有在调用 read() 时才会触发 data 事件。
+   - 示例代码：
+     ```javascript
+        const fs = require('fs');
+        
+        const readStream = fs.createReadStream('./files/data.txt', {
+            encoding: 'utf-8',  // 文件内容的编码方式，默认是 null，null 表示的是 buffer
+            flags: 'r',  // 操作方式是只读
+            highWaterMark: 2,  // 一次读取的数据量，单位是字节，默认是64k
+        });
+        
+        readStream.on('readable', () => {
+            console.log('begin');    
+            let ret = readStream.read(2); 
+            console.log('result', ret);
+        })
+     ```
+     输出：
+     ```javascript
+        begin
+        result 12
+        begin
+        result 34
+        begin
+        result 56
+        begin
+        result 78
+        begin
+        result 90
+        begin
+        result null
+     ```
+
+5. read(size)
+   - 该方法从内部缓冲区中收取并返回一些数据,如果没有可读数据，返回null
+   - size 是可选的，指定要读取 size 个字节，如果没有指定，内部缓冲区所包含的所有数据将返回
+   - 如果 size 字节不可读，返回 null，如果此时流没有结束(除非流已经结束)，会将所有保留在内部缓冲区的数据将被返回。比如：文件中有 1 个可读字节，但是指定size 为 2，这时调用 read(2) 会返回 null,如果流没有结束，那么会再次触发 readable 事件，将已经读到内部缓冲区中的那一个字节也返回。
+   - read() 方法只应该在 pause 模式下的可读流上运行，在流动模式下，read会自动调用，直到内部缓冲区数据完全耗尽。
+   
+6. **一般来说，我们不使用 readable 事件和read() 方法，使用pipe()或 data 事件代替**。
+ 
 ### 4. 可写流（Writable Streams）
 
-1. 可写流是对数据写入目的地（）的一种抽象。
+1. 可写流是对数据写入目的地（destination）的一种抽象。
 
 2. 基本用法：
    ```javascript
@@ -417,3 +460,169 @@
      - fs.createReadStream()
      - fs.createWriteStream()
 2. Stream
+
+### 8. 疑问
+1. 对于 pause 模式下，调用可读流的read(size) 方法，有一点问题，就是size 和 highWaterMark 的关系，按照这篇博客：[Node.js Stream(流)](https://juejin.im/post/6844903583477923848) 说的试了试，但是没有得到预想的结果，因此对这篇博客的这部分内容的准确性持怀疑态度，后面在找一找资料深入了解一下这个问题。
+
+- 示例：
+     ```javascript
+        const fs = require('fs');
+        
+        const readStream = fs.createReadStream('./files/data.txt', {
+            encoding: 'utf-8',  // 文件内容的编码方式，默认是 null，null 表示的是 buffer
+            flags: 'r',  // 操作方式是只读
+            highWaterMark: 2,  // 一次读取的数据量，单位是字节，默认是64k
+        });
+        
+        readStream.on('readable', () => {
+            console.log('begin');
+        
+            let ret = readStream.read(2);
+        
+            console.log('result', ret);
+        })
+     ```
+     1. data.txt 中的内容只有a，输出是：
+        ```javascript
+        begin
+        result null
+        begin
+        result a
+        ```
+        缓冲区的大小是2,但文件只有 a，所以只有1个字节在缓存区，而size指定了2，2个字节被认为是不可读的，返回null；而此时流还没有结束，再次触发readable，将缓存区内容全部返回。
+     2. data.txt中的内容是ab，输出是：
+        ```javascript
+        begin
+        result ab
+        begin
+        result null
+        ```
+        缓冲区大小是2，文件内容是 ab，所以缓冲区会被填满。而 size 为 2，所以将 ab 全部读取。缓冲区清空——>继续写入数据，发现到文件末尾，于是触发readable，此时缓冲区没有任何数据，所以返回null。
+     3. data.txt中的内容是abc，输出是：
+        ```javascript
+        begin
+        result ab
+        begin
+        result null
+        begin
+        result c
+        ```
+        缓冲区大小是2，文件内容是 abc，所以缓冲区会被填满。而 size 为 2，所以将 ab 全部读取。缓冲区清空——>继续写入数据，将 c 写入缓冲区，继续触发readable，有 size 为 2， 所以被认为是不可读的，返回null，由于流未结束，继续触发 readable 事件，将缓存区内容全部返回。
+     
+     4. data.txt中的内容是abcd，输出是：
+        ```javascript
+        begin
+        result ab
+        begin
+        result cd
+        begin
+        result null
+        ```
+        缓冲区大小是2，文件内容是 abcd，所以缓冲区会被填满。而 size 为 2，所以将 ab 全部读取。缓冲区继续写入数据，将 cd 写入缓冲区，继续触发readable，由于 size 为 2， 所以继续读取，返回 cd。继续向缓冲区写入数据，发现到了文件末尾，于是触发 readable 事件，返回 null。
+ 
+6. 在某些情况下，为 readable 事件添加回调将会导致一些数据被读取到内部缓存中
+   - 当消费数据大小 < 缓冲区大小，可读流会自动添加 highWaterMark 个数据到缓存，那么新添加的数据和之前缓冲区中未被消费的数据加一起，有可能超过了highWaterMark 大小，即缓冲区大小增加了。
+   - 示例代码（将 highWaterMark 改为 3，size 改为 1）：
+     ```javascript
+        const fs = require('fs');
+        
+        const readStream = fs.createReadStream('./files/data.txt', {
+            encoding: 'utf-8',  // 文件内容的编码方式，默认是 null，null 表示的是 buffer
+            // flags: 'r',  // 操作方式是只读
+            highWaterMark: 3,  // 一次读取的数据量，单位是字节，默认是64k
+        });
+        
+        readStream.on('readable', () => {
+            console.log('begin');  
+            let ret = readStream.read(1);  
+            console.log('result', ret); 
+        })
+     ```
+     1. 当文件内容为a时， 输出：
+        ```javascript
+           begin
+           result a
+           begin
+           result null
+        ```
+        说明：缓存中只有a，也只读了一个（read(1)），消费后，缓存区清空，再去读取时，已经到了文件末尾，返回null。
+      2. 当文件内容为 ab 时，输出：
+         ```javascript
+            begin
+            result a
+            begin
+            result b
+         ```
+         缓存中有 ab，当读完 a 后，继续向缓冲中添加数，发现到了文件末尾，触发 readable，而此时缓冲区中还有 b，因此将b返回。
+      3. 当文件内容为 abc 时，输出：
+         ```javascript
+            begin
+            result a
+            begin
+            result b
+         ```
+      4. 当文件内容为 abcd 时，输出：
+         ```javascript
+            begin
+            result a
+            begin
+            result b
+            begin
+            result c
+         ```
+      5. 当文件内容为 abcde 时，输出：
+         ```javascript
+            begin
+            result a
+            begin
+            result b
+         ```
+         **3 - 5 这三种情况不明白，也没有理解为什么没有读取全部的内容**。可能需要深入了解一下流的工作过程。
+
+7. 当读取个数 size > 缓冲区大小，会去更改缓存区的大小 highWaterMark（规则为找满足大于等于 size 的最小的2的几次方）
+   1. 示例代码：
+      ```javascript
+        const fs = require('fs');
+        
+        const readStream = fs.createReadStream('./files/data.txt', {
+            encoding: 'utf-8',  // 文件内容的编码方式，默认是 null，null 表示的是 buffer
+            flags: 'r',  // 操作方式是只读
+            highWaterMark: 3,  // 一次读取的数据量，单位是字节，默认是64k
+        });
+        
+        readStream.on('readable', () => {
+            console.log('begin');    
+            let ret = readStream.read(4);   
+            console.log('result', ret);  
+        })
+      ```
+   2. 当文件内容是 abcd 时，输出是：
+      ```javascript
+        begin
+        result null
+        begin
+        result abcd
+        begin
+        result null
+      ```
+      size > 缓冲区大小，被认为是不可读取的，所以返回 null，此时会重新计算 highWaterMark 大小，离4最近的是2的2次方，为4，所以highWaterMark此时等于4，所以会输出 abcd，继续向缓冲区添加数据，发现已经达到文件末尾，继续触发 readable 事件，最终输出null。
+   3. 当文件内容是 abcdefg 时，输出是：
+      ```javascript
+         begin
+         result null
+         begin
+         result abcd
+         begin
+         result efg
+      ```
+      size > 缓冲区大小，被认为是不可读取的，所以返回 null，此时会重新计算 highWaterMark 大小，离4最近的是2的2次方，为4，所以highWaterMark此时等于4，所以会输出 abcd，继续向缓冲区添加4个数据，发现已经达到文件末尾，于是触发 readable 事件，将缓冲区内的数据全部输出。
+   4. 我们将 size 改为 9，当文件内容为 abcdefghi 时，输出如下：
+      ```javascript
+         begin
+         result null
+         begin
+         result abcdefghi
+         begin
+         result null
+      ```
+      按照前面的说法，缓冲区大小应该被修改为 8，第一次输出 null 好理解，因为缓冲区小于 size，但是，第二，缓冲区大小现在是 8，内容是：abcdefgh，那么输出 应该是 abcdefgh，而不是全部输出。
