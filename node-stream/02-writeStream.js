@@ -16,7 +16,6 @@ const writeStream = fs.createWriteStream('./files/output.txt', {
     flags: 'w',  // 文件操作方式是写入
     // mode: 0o666,  //
     autoClose: true,
-    highWaterMark: 3,  // 默认是16k，单位是字节
     start: 0  // 起始位置
 });
 
