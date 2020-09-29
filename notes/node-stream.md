@@ -260,7 +260,7 @@
           flags: 'w',  // 文件操作方式是写入
           // mode: 0o666,  //
           autoClose: true,
-          highWaterMark: 3,  // 默认是16看、，单位是字节
+          highWaterMark: 3,  // 默认是16k，单位是字节
           start: 0  // 起始位置
       });
       
@@ -590,13 +590,13 @@
      - `drain`  
        如果调用 write(chunk) 方法返回 false，drain 事件会在适合恢复写入数据到流的时候触发。  
        drain 事件触发条件：1. 缓冲器满了，即 write() 方法返回 false。2. 缓冲器的数据都写入到流，即数据都被消费掉后。  
-       触发 drain 事件后，我们一般需要将缓冲区的数据消费。
+       触发 drain 事件后，我们一般需要将缓冲区的数据消费掉。
      - `error`  
        当向流中写入数据或者在数据在管道中流动出现错误时触发。回调函数将接收到一个 Error 对象。
      - `finish`  
        在 end() 方法被调用后，且将缓冲区数据都已经传给底层系统（underlying system）之后触发该事件。 
      - `pipe`  
-       可读流调用 pipe() 方法后，并且在目标流向（destinations）)中添加当前可写流（writable）时触发该事件。
+       可读流调用 pipe() 方法后，并且在目标流向（destinations）中添加当前可写流（writable）时触发该事件。
    - api
      - write(chunk[, encoding][, callback])
        - 向流中写入一些数据，一旦数据被处理，就调用回调函数 callback。
