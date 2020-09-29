@@ -9,9 +9,16 @@ const readStream = fs.createReadStream('./files/data.txt', {
 readStream.on('readable', () => {
     console.log('begin');
 
-    let ret = readStream.read(9);
+    let ret;
 
-    console.log('result', ret);
+    // 使用 read() 处理数据时， while 循环是必需的
+    // 只有在 readable.read() 返回 null 之后，才会触发 readable 事件
+    // 每一次循环完成，必须手动调用 read()，去获取缓冲区中的数据
+    // 缓冲区中的数据被清空后，触发 readable 事件
+    while (null !== (ret = readStream.read(1))) {
+        console.log('result', ret);
+    }
+
 
 })
 
